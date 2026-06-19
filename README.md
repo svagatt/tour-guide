@@ -18,4 +18,3 @@ Run the command,
 npm run dev
 ```
 should be running on `localhost:3000`
-test

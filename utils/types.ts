@@ -1,7 +1,7 @@
 export interface Candidate {
   name: string
   address: string
-  category?: string
+  category?: Category
   why_interesting: string
   sources: string[]
 }
@@ -29,4 +29,13 @@ export interface Tour {
 export interface Coordinates {
   lat?: number
   lng?: number
+}
+
+export enum Category {
+  HISTORICAL = 'Historical',
+  FOOD = 'Food',
+  ARCHITECTURE = 'Architecture',
+  HIDDEN_GEM = 'Hidden Gem',
+  VIEWPOINT = 'Viewpoint',
+  CULTURAL = 'Cultural',
 }

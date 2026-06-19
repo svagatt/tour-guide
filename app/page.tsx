@@ -1,200 +1,255 @@
 'use client'
 
 import { useState } from 'react'
-import { ResearchResult, Tour } from '@/utils/types'
-import ResearchResults from '@/components/ResearchResults'
+import { Tour } from '@/utils/types'
 import TourDisplay from '@/components/TourDisplay'
 
-export default function Home() {
-  const [city, setCity] = useState('')
-  const [researchLoading, setResearchLoading] = useState(false)
-  const [research, setResearch] = useState<ResearchResult | null>(null)
-  const [researchError, setResearchError] = useState('')
-  const [tourLoading, setTourLoading] = useState(false)
-  const [tour, setTour] = useState<Tour | null>(null)
-  const [tourError, setTourError] = useState('')
-  const [activeTab, setActiveTab] = useState<'input' | 'research' | 'tour'>('input')
+/**
+ * Interrupt data from the agent's ask_question tool
+ */
+interface InterruptData {
+  type: 'question'
+  question: string
+  options?: string[]
+  context?: string
+}
 
-  const handleResearch = async () => {
+export default function Home() {
+  // Input state
+  const [city, setCity] = useState('')
+
+  // Session state
+  const [threadId, setThreadId] = useState<string | null>(null)
+  const [tour, setTour] = useState<Tour | null>(null)
+  const [interrupt, setInterrupt] = useState<InterruptData | null>(null)
+
+  // UI state
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [userResponse, setUserResponse] = useState('')
+
+  /**
+   * Start a new tour planning session
+   */
+  const handleStart = async () => {
     if (!city.trim()) {
-      setResearchError('Please enter a city name')
+      setError('Please enter a city name')
       return
     }
 
-    setResearchLoading(true)
-    setResearchError('')
-    setResearch(null)
+    setLoading(true)
+    setError('')
+    setTour(null)
+    setInterrupt(null)
 
     try {
-      const res = await fetch('/api/research', {
+      const res = await fetch('/api/tour/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ city: city.trim() }),
       })
 
-      if (!res.ok) {
-        throw new Error(`Research failed: ${res.statusText}`)
-      }
-
       const data = await res.json()
-      if (data.error) {
-        throw new Error(data.error)
-      }
-      setResearch(data)
-      setActiveTab('research')
+      console.log('Start response:', data)
+      if (!res.ok) throw new Error(data.error || 'Failed to start')
+
+      setThreadId(data.threadId)
+      setTour(data.state?.tour || null)
+      setInterrupt(data.interrupt || null)
     } catch (err) {
-      setResearchError(err instanceof Error ? err.message : 'Research failed')
+      setError(err instanceof Error ? err.message : 'Failed to start')
     } finally {
-      setResearchLoading(false)
+      setLoading(false)
     }
   }
 
-  const handleDesignTour = async () => {
-    if (!research) return
+  /**
+   * Send response to the agent's question
+   */
+  const handleRespond = async (response?: string) => {
+    if (!threadId) return
 
-    setTourLoading(true)
-    setTourError('')
-    setTour(null)
+    const responseText = response || userResponse.trim()
+    if (!responseText) {
+      setError('Please enter a response')
+      return
+    }
+
+    setLoading(true)
+    setError('')
+    setUserResponse('')
 
     try {
-      const res = await fetch('/api/design', {
+      const res = await fetch('/api/tour/continue', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(research),
+        body: JSON.stringify({ threadId, response: responseText }),
       })
 
-      if (!res.ok) {
-        throw new Error(`Design failed: ${res.statusText}`)
-      }
-
       const data = await res.json()
-      if (data.error) {
-        throw new Error(data.error)
-      }
-      setTour(data)
-      setActiveTab('tour')
+      console.log('Continue response:', data)
+      if (!res.ok) throw new Error(data.error || 'Failed to continue')
+
+      setTour(data.state?.tour || null)
+      setInterrupt(data.interrupt || null)
     } catch (err) {
-      setTourError(err instanceof Error ? err.message : 'Design failed')
+      setError(err instanceof Error ? err.message : 'Failed to continue')
     } finally {
-      setTourLoading(false)
+      setLoading(false)
     }
   }
 
+  /**
+   * Reset and start over
+   */
   const handleReset = () => {
     setCity('')
-    setResearch(null)
+    setThreadId(null)
     setTour(null)
-    setResearchError('')
-    setTourError('')
-    setActiveTab('input')
+    setInterrupt(null)
+    setUserResponse('')
+    setError('')
   }
+
+  // Determine what to show
+  const showInput = !threadId
+  const showQuestion = threadId && interrupt && !tour
+  const showTour = tour
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">Self Guided Tours</h1>
-          <p className="text-gray-600">Self guided walking tours for small towns where you don't have to worry about missing the best parts ;)</p>
+          <p className="text-gray-600">
+            An AI agent plans your perfect walking tour
+          </p>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="flex gap-2 mb-6 border-b border-gray-300">
-          <button
-            onClick={() => setActiveTab('input')}
-            className={`px-4 py-3 font-medium transition ${
-              activeTab === 'input'
-                ? 'text-indigo-600 border-b-2 border-indigo-600'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            Ready for a tour?
-          </button>
-          {research && (
-            <button
-              onClick={() => setActiveTab('research')}
-              className={`px-4 py-3 font-medium transition ${
-                activeTab === 'research'
-                  ? 'text-indigo-600 border-b-2 border-indigo-600'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              Research ({research.candidates?.length || 0})
-            </button>
-          )}
-          {tour && (
-            <button
-              onClick={() => setActiveTab('tour')}
-              className={`px-4 py-3 font-medium transition ${
-                activeTab === 'tour'
-                  ? 'text-indigo-600 border-b-2 border-indigo-600'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              Tour
-            </button>
-          )}
-        </div>
+        {/* Error Display */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+            <p className="text-red-700">{error}</p>
+          </div>
+        )}
 
-        {/* Input Tab */}
-        {activeTab === 'input' && (
+        {/* Initial Input */}
+        {showInput && (
           <div className="bg-white rounded-lg shadow-lg p-8">
             <div className="max-w-md">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="city-input" className="block text-sm font-medium text-gray-700 mb-2">
                 City Name
               </label>
               <input
+                id="city-input"
                 type="text"
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleResearch()}
-                placeholder="Marsala / La Gi?"
+                onKeyDown={(e) => e.key === 'Enter' && handleStart()}
+                placeholder="Marsala, Sicily"
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               />
-              {researchError && <p className="text-red-600 text-sm mt-2">{researchError}</p>}
 
               <button
-                onClick={handleResearch}
-                disabled={researchLoading}
+                onClick={handleStart}
+                disabled={loading}
                 className="mt-6 w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-medium py-3 rounded-lg transition"
               >
-                {researchLoading ? 'Researching...' : 'Research City'}
+                {loading ? 'Agent is working...' : 'Plan My Tour'}
               </button>
             </div>
           </div>
         )}
 
-        {/* Research Tab */}
-        {activeTab === 'research' && research && (
+        {/* Agent Question */}
+        {showQuestion && interrupt && (
           <div className="bg-white rounded-lg shadow-lg p-8">
             <div className="flex justify-between items-start mb-6">
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900">{research.city}</h2>
-                <p className="text-gray-600">{research.candidates?.length || 0} candidate locations found</p>
-              </div>
+              <h2 className="text-xl font-bold text-gray-900">Agent Question</h2>
+              <button
+                onClick={handleReset}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                Start Over
+              </button>
+            </div>
+
+            <div className="mb-6">
+              <p className="text-gray-800 text-lg mb-4">{interrupt.question}</p>
+
+              {/* Show context if provided (e.g., list of candidates) */}
+              {interrupt.context && (
+                <div className="bg-gray-50 rounded-lg p-4 mb-4 max-h-64 overflow-y-auto">
+                  <pre className="text-sm text-gray-700 whitespace-pre-wrap">
+                    {interrupt.context}
+                  </pre>
+                </div>
+              )}
+
+              {/* Quick options if provided */}
+              {interrupt.options && interrupt.options.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {interrupt.options.map((option, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleRespond(option)}
+                      disabled={loading}
+                      className="px-4 py-2 bg-gray-100 hover:bg-gray-200 disabled:bg-gray-50 text-gray-700 rounded-lg transition"
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Free-form response */}
               <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={userResponse}
+                  onChange={(e) => setUserResponse(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleRespond()}
+                  placeholder="Type your response..."
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                />
                 <button
-                  onClick={handleReset}
-                  className="px-4 py-2 text-gray-700 hover:text-gray-900 font-medium transition"
-                >
-                  Reset
-                </button>
-                <button
-                  onClick={handleDesignTour}
-                  disabled={tourLoading}
+                  onClick={() => handleRespond()}
+                  disabled={loading || !userResponse.trim()}
                   className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition"
                 >
-                  {tourLoading ? 'Designing...' : 'Design Tour'}
+                  {loading ? 'Working...' : 'Send'}
                 </button>
               </div>
             </div>
-
-            <ResearchResults candidates={research.candidates || []} />
           </div>
         )}
 
-        {/* Tour Tab */}
-        {activeTab === 'tour' && tour && (
+        {/* Loading state OR waiting state (no question/tour yet) */}
+        {threadId && !interrupt && !tour && (
+          <div className="bg-white rounded-lg shadow-lg p-8 text-center">
+            {loading ? (
+              <div className="animate-pulse">
+                <p className="text-gray-600 text-lg">Agent is working...</p>
+                <p className="text-gray-400 text-sm mt-2">This may take a moment</p>
+              </div>
+            ) : (
+              <div>
+                <p className="text-gray-600 text-lg">Agent finished but no response received.</p>
+                <p className="text-gray-400 text-sm mt-2">This might be a bug - check the console.</p>
+                <button
+                  onClick={handleReset}
+                  className="mt-4 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg"
+                >
+                  Start Over
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Final Tour */}
+        {showTour && tour && (
           <div className="bg-white rounded-lg shadow-lg p-8">
             <div className="flex justify-between items-start mb-6">
               <div className="flex-1">
@@ -206,18 +261,11 @@ export default function Home() {
                 onClick={handleReset}
                 className="px-4 py-2 text-gray-700 hover:text-gray-900 font-medium transition"
               >
-                Reset
+                Plan Another Tour
               </button>
             </div>
 
             <TourDisplay tour={tour} />
-          </div>
-        )}
-
-        {/* Error States */}
-        {tourError && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-            <p className="text-red-700">{tourError}</p>
           </div>
         )}
       </div>
